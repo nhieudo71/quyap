@@ -1,0 +1,26 @@
+rules_version = '2';
+// ============================================================
+// Firebase Storage Rules — ảnh hóa đơn/chứng từ khu phố
+// Dán vào: Firebase Console → Storage → Rules → Publish
+// Lưu ý: Storage Rules KHÔNG đọc được Firestore nên không kiểm tra được
+// vai trò thành viên. Ở đây cho phép người dùng đã đăng nhập đọc/ghi ảnh
+// trong thư mục khu phố, kèm giới hạn loại tệp & dung lượng.
+// ============================================================
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /neighborhoods/{nb}/receipts/{file} {
+      // Ai đăng nhập cũng xem được ảnh (ảnh dùng chung trong khu phố)
+      allow read: if request.auth != null;
+      // Ghi: phải đăng nhập, chỉ ảnh, tối đa 3MB
+      allow write: if request.auth != null
+                   && request.resource.size < 3 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      // Xóa: người đăng nhập (Thủ quỹ thao tác qua app)
+      allow delete: if request.auth != null;
+    }
+    // Mặc định: chặn mọi đường dẫn khác
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

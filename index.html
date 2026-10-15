@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<title>Quản Lý Tài Chính Khu Phố</title>
+
+<!-- PWA META -->
+<meta name="theme-color" content="#FF8C00"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Tài Chính KP"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="application-name" content="Tài Chính KP"/>
+<meta name="description" content="Ứng dụng quản lý tài chính khu phố – thu chi, báo cáo, đồng bộ đám mây Firebase, sao lưu JSON"/>
+<link rel="manifest" href="./manifest.json" id="pwa-manifest"/>
+<!-- Icon tĩnh (dùng khi host HTTPS); bản blob được JS tiêm dự phòng cho file:// -->
+<link rel="apple-touch-icon" href="./icon-192.svg" id="apple-touch-icon"/>
+<link rel="icon" type="image/svg+xml" href="./icon-192.svg" id="favicon-svg"/>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<!-- QR code thật (node-qrcode UMD) -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<!-- Xuất Excel .xlsx (SheetJS) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Firebase SDK (tách ra js/firebase.js — nạp dạng module) -->
+<script type="module" src="./js/firebase.js"></script>
+<!-- Stylesheet (tách ra css/styles.css) -->
+<link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+<!-- LOGIN SCREEN -->
+<div id="login-screen" style="
+  position:fixed;inset:0;z-index:9999;
+  background:linear-gradient(160deg,#1A1208 0%,#3A2000 60%,#FF8C00 150%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  font-family:'Be Vietnam Pro',sans-serif;
+  padding:32px 24px;
+">
+  <div style="width:84px;height:84px;border-radius:24px;background:linear-gradient(135deg,#FF8C00,#E65C00);display:flex;align-items:center;justify-content:center;font-size:42px;margin-bottom:24px;box-shadow:0 12px 40px rgba(255,140,0,0.4)">💰</div>
+  <h1 style="color:white;font-size:22px;font-weight:800;margin:0 0 6px;letter-spacing:-.5px;text-align:center">Quản Lý Tài Chính<br>Khu Phố</h1>
+  <p style="color:rgba(255,255,255,.55);font-size:13px;margin:0 0 32px;text-align:center">Đăng nhập để truy cập dữ liệu<br>khu phố của bạn</p>
+  <button id="btn-google-login" onclick="signInWithGoogle()" style="
+    display:flex;align-items:center;gap:12px;
+    background:white;color:#1A1208;border:none;border-radius:14px;
+    padding:14px 24px;font-size:15px;font-weight:700;
+    font-family:inherit;cursor:pointer;width:100%;max-width:320px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.3);transition:transform .2s,box-shadow .2s;
+  " onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+    <svg width="22" height="22" viewBox="0 0 48 48"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.8 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/></svg>
+    Đăng nhập với Google
+  </button>
+  <div id="login-loading" style="display:none;margin-top:20px;color:rgba(255,255,255,.6);font-size:13px;align-items:center;gap:8px">
+    <div style="width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin 1s linear infinite"></div>
+    Đang đăng nhập...
+  </div>
+  <p id="login-error" style="color:#FF6B6B;font-size:12px;margin-top:16px;text-align:center;display:none"></p>
+  <div style="position:absolute;bottom:24px;color:rgba(255,255,255,.3);font-size:11px;text-align:center">
+    Quản Lý Tài Chính Khu Phố v6.0 · Firebase Realtime
+  </div>
+</div>
+
+<!-- NEIGHBORHOOD PICKER SCREEN -->
+<div id="nb-picker-screen" style="
+  position:fixed;inset:0;z-index:9998;display:none;
+  background:linear-gradient(160deg,#1A1208 0%,#3A2000 60%,#FF8C00 150%);
+  font-family:'Be Vietnam Pro',sans-serif;overflow-y:auto;
+  padding:40px 24px 32px;
+">
+  <div style="max-width:380px;margin:0 auto">
+    <div style="text-align:center;margin-bottom:32px">
+      <div style="width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,#FF8C00,#E65C00);display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 16px;box-shadow:0 8px 24px rgba(255,140,0,0.4)">🏘️</div>
+      <h2 style="color:white;font-size:20px;font-weight:800;margin:0 0 6px">Chọn Khu Phố</h2>
+      <p id="nb-picker-user" style="color:rgba(255,255,255,.55);font-size:12px;margin:0">Đã đăng nhập</p>
+    </div>
+
+    <!-- Existing neighborhoods -->
+    <div id="my-neighborhoods-section" style="display:none;margin-bottom:20px">
+      <div style="color:rgba(255,255,255,.6);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Khu phố của bạn</div>
+      <div id="my-neighborhoods-list"></div>
+    </div>
+
+    <!-- Join with code -->
+    <div style="background:rgba(255,255,255,.1);border-radius:16px;padding:18px;margin-bottom:14px;backdrop-filter:blur(10px)">
+      <div style="color:white;font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:20px">🔑</span> Tham gia bằng mã
+      </div>
+      <input id="join-code-input" type="text" placeholder="Nhập mã khu phố (VD: KP-1234)"
+        style="width:100%;padding:12px 14px;border:2px solid rgba(255,255,255,.3);border-radius:10px;background:rgba(255,255,255,.15);color:white;font-family:inherit;font-size:14px;font-weight:600;outline:none;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px"
+        oninput="this.value=this.value.toUpperCase()"
+        onkeydown="if(event.key==='Enter') joinNeighborhood()">
+      <button onclick="joinNeighborhood()" style="width:100%;padding:12px;background:white;color:#1A1208;border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">
+        Tham gia khu phố
+      </button>
+    </div>
+
+    <!-- Create new -->
+    <div style="background:rgba(255,255,255,.08);border-radius:16px;padding:18px;backdrop-filter:blur(10px)">
+      <div style="color:white;font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:20px">✨</span> Tạo khu phố mới
+      </div>
+      <input id="create-nb-name" type="text" placeholder="Tên khu phố (VD: Khu phố 3, P.Tân Hiệp)"
+        style="width:100%;padding:12px 14px;border:2px solid rgba(255,255,255,.3);border-radius:10px;background:rgba(255,255,255,.15);color:white;font-family:inherit;font-size:13px;outline:none;margin-bottom:10px"
+        onkeydown="if(event.key==='Enter') createNeighborhood()">
+      <button onclick="createNeighborhood()" style="width:100%;padding:12px;background:linear-gradient(135deg,#FF8C00,#E65C00);color:white;border:none;border-radius:10px;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer">
+        Tạo & Trở thành Thủ quỹ
+      </button>
+    </div>
+
+    <p id="nb-picker-error" style="color:#FF6B6B;font-size:12px;margin-top:14px;text-align:center;display:none"></p>
+    <p id="nb-picker-loading" style="color:rgba(255,255,255,.6);font-size:12px;margin-top:14px;text-align:center;display:none">⏳ Đang xử lý...</p>
+
+    <div style="text-align:center;margin-top:20px">
+      <button onclick="signOutUser()" style="background:none;border:none;color:rgba(255,255,255,.4);font-size:12px;font-family:inherit;cursor:pointer">Đăng xuất</button>
+    </div>
+  </div>
+</div>
+
+<!-- Loading overlay -->
+<div id="app-loading" style="
+  position:fixed;inset:0;z-index:500;
+  background:rgba(255,255,255,0.95);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;font-family:'Be Vietnam Pro',sans-serif;
+">
+  <div style="width:48px;height:48px;border:3px solid #EAE4DC;border-top-color:#FF8C00;border-radius:50%;animation:spin 1s linear infinite"></div>
+  <p id="loading-text" style="font-size:14px;font-weight:600;color:#7A6E62">Đang tải dữ liệu...</p>
+</div>
+
+<!-- PWA INSTALL BANNER -->
+<div id="pwa-banner">
+  <div class="pwa-banner-icon">💰</div>
+  <div class="pwa-banner-text">
+    <div class="pwa-banner-title">Cài đặt ứng dụng</div>
+    <div class="pwa-banner-sub">Dùng như app thật, không cần mạng</div>
+  </div>
+  <div class="pwa-banner-actions">
+    <button class="pwa-btn-install" onclick="installPWA()">Cài đặt</button>
+    <button class="pwa-btn-dismiss" onclick="dismissBanner()"><span class="material-symbols-outlined" style="font-size:18px">close</span></button>
+  </div>
+</div>
+
+<div class="app">
+  <!-- HEADER -->
+  <header>
+    <div class="avatar" id="header-avatar" onclick="showPage('settings')" style="cursor:pointer">
+      <img id="user-photo" src="" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:none">
+      <span class="material-symbols-outlined" id="user-default-icon" style="font-size:22px">account_circle</span>
+    </div>
+    <div class="header-info">
+      <p id="header-greeting">Chào mừng trở lại,</p>
+      <h2 id="neighborhood-name">Khu phố 3, P. Tân Hiệp</h2>
+    </div>
+    <div class="header-actions">
+      <div id="sync-indicator" style="display:none;width:8px;height:8px;border-radius:50%;background:#2D9E6A;margin-right:4px" title="Đã đồng bộ Firebase"></div>
+      <button class="icon-btn" onclick="toggleDarkMode()" title="Chế độ tối / sáng">
+        <span class="material-symbols-outlined" id="theme-icon" style="font-size:22px">dark_mode</span>
+      </button>
+      <button class="icon-btn admin-only" onclick="openApprovalModal()" title="Duyệt chi" style="position:relative">
+        <span class="material-symbols-outlined" style="font-size:22px">pending_actions</span>
+        <span id="approval-header-badge" style="display:none;position:absolute;top:2px;right:2px;background:var(--danger);color:white;font-size:9px;font-weight:800;min-width:14px;height:14px;border-radius:7px;padding:0 3px;line-height:14px;text-align:center"></span>
+      </button>
+      <button class="icon-btn" onclick="showPage('settings')" title="Cài đặt"><span class="material-symbols-outlined" style="font-size:22px">settings</span></button>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main>
+    <!-- DASHBOARD PAGE -->
+    <div class="page active" id="page-dashboard">
+      <div class="balance-card">
+        <p class="balance-label">Số dư quỹ hiện tại</p>
+        <div class="balance-amount" id="total-balance">0<span>VND</span></div>
+        <div class="balance-footer">
+          <div>
+            <div style="opacity:.75; font-size:11px; margin-bottom:2px;">Cập nhật lần cuối</div>
+            <div id="last-updated" style="font-size:12px; font-weight:600;">--</div>
+          </div>
+          <span class="material-symbols-outlined icon">account_balance_wallet</span>
+        </div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-card">
+          <div class="stat-icon income"><span class="material-symbols-outlined">trending_up</span></div>
+          <div><div class="stat-label">Thu tháng này</div><div class="stat-value income" id="month-income">0đ</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon expense"><span class="material-symbols-outlined">trending_down</span></div>
+          <div><div class="stat-label">Chi tháng này</div><div class="stat-value expense" id="month-expense">0đ</div></div>
+        </div>
+      </div>
+      <div id="budget-overview-section" style="display:none; margin: 16px 16px 0;">
+        <div style="background:white;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-size:13px;font-weight:700">Ngân sách tháng này</span>
+            <button class="btn-link" onclick="openBudgetModal()" style="font-size:11px">Chỉnh sửa</button>
+          </div>
+          <div id="budget-overview-list"></div>
+        </div>
+      </div>
+      <section>
+        <div class="section-header">
+          <h3 class="section-title">Phân bổ quỹ</h3>
+        </div>
+        <div id="fund-list">
+          <div class="empty-state"><span class="material-symbols-outlined">folder_open</span><p>Chưa có quỹ nào</p></div>
+        </div>
+      </section>
+      <section>
+        <div class="section-header">
+          <h3 class="section-title">Giao dịch gần đây</h3>
+          <button class="btn-link" onclick="showPage('history')">Tất cả</button>
+        </div>
+        <div id="recent-txs">
+          <div class="empty-state"><span class="material-symbols-outlined">receipt_long</span><p>Chưa có giao dịch nào</p></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- HISTORY PAGE -->
+    <div class="page" id="page-history">
+      <div class="page-title">Lịch sử giao dịch</div>
+      <!-- Search Bar -->
+      <div class="search-bar-wrap">
+        <span class="material-symbols-outlined">search</span>
+        <input class="search-input" id="search-input" type="text" placeholder="Tìm tên, số tiền, danh mục..."
+          oninput="onSearchInput(this.value)">
+        <button class="search-clear" id="search-clear" onclick="clearSearch()">
+          <span class="material-symbols-outlined" style="font-size:16px">close</span>
+        </button>
+      </div>
+      <!-- Type Filter -->
+      <div class="filter-bar" id="filter-bar">
+        <button class="filter-chip active" data-filter="all" onclick="filterTx('all')">Tất cả</button>
+        <button class="filter-chip" data-filter="income" onclick="filterTx('income')">Thu nhập</button>
+        <button class="filter-chip" data-filter="expense" onclick="filterTx('expense')">Chi phí</button>
+      </div>
+      <!-- Category Filter -->
+      <div class="filter-bar" id="cat-filter-bar" style="margin-top:0"></div>
+      <div style="padding: 0 16px;" id="all-txs-container">
+        <div class="empty-state"><span class="material-symbols-outlined">receipt_long</span><p>Chưa có giao dịch nào</p></div>
+      </div>
+    </div>
+
+    <!-- REPORT PAGE -->
+    <div class="page" id="page-report">
+      <div class="page-title">Báo cáo</div>
+      <div class="month-nav">
+        <button onclick="prevMonth()"><span class="material-symbols-outlined">chevron_left</span></button>
+        <span id="report-month-label">--</span>
+        <button onclick="nextMonth()"><span class="material-symbols-outlined">chevron_right</span></button>
+      </div>
+      <div class="report-summary">
+        <div class="report-card">
+          <div class="report-card-label">Thu</div>
+          <div class="report-card-val" style="color:var(--success)" id="r-income">0đ</div>
+        </div>
+        <div class="report-card">
+          <div class="report-card-label">Chi</div>
+          <div class="report-card-val" style="color:var(--danger)" id="r-expense">0đ</div>
+        </div>
+        <div class="report-card">
+          <div class="report-card-label">Số dư</div>
+          <div class="report-card-val" style="color:var(--primary)" id="r-balance">0đ</div>
+        </div>
+      </div>
+      <div class="chart-container">
+        <div class="chart-title">Thu chi 6 tháng gần nhất</div>
+        <div class="chart-legend">
+          <div class="legend-item"><div class="legend-dot income"></div> Thu nhập</div>
+          <div class="legend-item"><div class="legend-dot expense"></div> Chi phí</div>
+        </div>
+        <div class="bar-chart" id="bar-chart"></div>
+      </div>
+      <div class="chart-container" id="cat-pie-container" style="display:none">
+        <div class="chart-title">Cơ cấu chi theo danh mục</div>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <div id="cat-pie" style="width:120px;height:120px;border-radius:50%;flex-shrink:0"></div>
+          <div id="cat-pie-legend" style="flex:1;min-width:140px"></div>
+        </div>
+      </div>
+      <section>
+        <div class="section-header">
+          <h3 class="section-title">Giao dịch tháng này</h3>
+          <div style="display:flex;gap:6px">
+            <button class="btn-link" style="font-size:11px;display:flex;align-items:center;gap:3px" onclick="exportCSVMonth()">
+              <span class="material-symbols-outlined" style="font-size:14px">table_view</span>CSV
+            </button>
+            <button class="btn-link" style="font-size:11px;display:flex;align-items:center;gap:3px;color:var(--success)" onclick="exportExcelMonth()">
+              <span class="material-symbols-outlined" style="font-size:14px">grid_on</span>Excel
+            </button>
+            <button class="btn-link" style="font-size:11px;display:flex;align-items:center;gap:3px;color:var(--danger)" onclick="exportReportPDF()">
+              <span class="material-symbols-outlined" style="font-size:14px">picture_as_pdf</span>PDF
+            </button>
+          </div>
+        </div>
+        <div id="report-txs"></div>
+      </section>
+    </div>
+
+    <!-- SETTINGS PAGE -->
+    <div class="page" id="page-settings">
+      <div class="page-title">Cài đặt</div>
+      <div class="settings-section">
+        <div class="settings-title">Ứng dụng PWA</div>
+        <div class="pwa-status-card">
+          <div class="pwa-status-row">
+            <div class="pwa-status-icon" style="background:#FFF3E0; color:var(--primary)">
+              <span class="material-symbols-outlined">install_mobile</span>
+            </div>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:700">Cài đặt ứng dụng</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px" id="pwa-mode-text">Đang kiểm tra...</div>
+            </div>
+            <span id="pwa-status-badge" class="pwa-status-badge browser">Trình duyệt</span>
+          </div>
+          <button class="pwa-install-btn" id="pwa-install-settings-btn" onclick="installPWA()" disabled>
+            <span class="material-symbols-outlined" style="font-size:18px">download</span>
+            <span id="pwa-install-btn-text">Thêm vào màn hình chính</span>
+          </button>
+        </div>
+        <div class="settings-item" onclick="showPwaGuide()">
+          <div class="settings-item-icon" style="background:#EBF3FF; color:var(--info)"><span class="material-symbols-outlined">help_outline</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Hướng dẫn cài đặt PWA</div>
+            <div class="settings-item-sub">iOS, Android, máy tính</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-title">Minh bạch thu chi</div>
+        <div class="settings-item" onclick="openLookupModal()">
+          <div class="settings-item-icon" style="background:#FFF3E0; color:var(--primary)"><span class="material-symbols-outlined">verified</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Tra cứu mã phiếu thu/chi</div>
+            <div class="settings-item-sub">Nhập mã trên phiếu để đối chiếu giao dịch</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-title">Xuất dữ liệu</div>
+        <div class="settings-item" onclick="openExportModal()">
+          <div class="settings-item-icon" style="background:#E8F7F0; color:var(--success)"><span class="material-symbols-outlined">table_view</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Xuất file CSV</div>
+            <div class="settings-item-sub">Mở bằng Excel, Google Sheets</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+        <div class="settings-item" onclick="openReceiptModal()">
+          <div class="settings-item-icon" style="background:#FEF0F0; color:var(--danger)"><span class="material-symbols-outlined">receipt</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Xuất phiếu thu PDF</div>
+            <div class="settings-item-sub">In phiếu thu/chi cho từng giao dịch</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+        <div class="settings-item" onclick="exportJSON()">
+          <div class="settings-item-icon" style="background:#EBF3FF; color:var(--info)"><span class="material-symbols-outlined">data_object</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Xuất dữ liệu JSON</div>
+            <div class="settings-item-sub">Tải file backup về máy</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+        <div class="settings-item" onclick="document.getElementById('import-file').click()">
+          <div class="settings-item-icon" style="background:#FFF3E0; color:var(--primary)"><span class="material-symbols-outlined">upload</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Nhập dữ liệu JSON</div>
+            <div class="settings-item-sub">Khôi phục từ file backup</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+        <input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(event)">
+      </div>
+      <div class="settings-section">
+        <div class="settings-title">Khu phố hiện tại</div>
+        <div class="settings-item" style="cursor:default;flex-direction:column;align-items:stretch;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:38px;height:38px;border-radius:12px;background:#FFF3E0;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🏘️</div>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:700" id="settings-nb-name">--</div>
+              <div style="font-size:11px;color:var(--text-muted)" id="settings-nb-role">--</div>
+            </div>
+            <span id="settings-nb-role-badge" class="role-badge admin">🔑 Thủ quỹ</span>
+          </div>
+          <div style="background:var(--bg);border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-size:10px;color:var(--text-muted);font-weight:600;margin-bottom:2px">MÃ THAM GIA</div>
+              <div id="nb-join-code" style="font-size:20px;font-weight:900;letter-spacing:3px;color:var(--primary)">--</div>
+            </div>
+            <button onclick="copyJoinCode()" style="background:var(--primary);color:white;border:none;border-radius:8px;padding:8px 14px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px">
+              <span class="material-symbols-outlined" style="font-size:16px">content_copy</span>Sao chép
+            </button>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.5">Chia sẻ mã này cho người dân để họ tham gia xem dữ liệu khu phố.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+            <button onclick="openQRModal()" style="padding:10px;background:var(--primary-light);color:var(--primary);border:none;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+              <span class="material-symbols-outlined" style="font-size:16px">qr_code_2</span>Mã QR
+            </button>
+            <button onclick="openApprovalModal()" class="admin-only" id="approval-btn" style="padding:10px;background:#FFF3E0;color:#E07800;border:none;border-radius:10px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;position:relative">
+              <span class="material-symbols-outlined" style="font-size:16px">pending_actions</span>Duyệt chi
+              <span id="approval-badge" style="display:none;position:absolute;top:-4px;right:-4px;background:var(--danger);color:white;font-size:9px;font-weight:800;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;line-height:1" id="approval-count-badge">0</span>
+            </button>
+          </div>
+        </div>
+        <div class="settings-item" onclick="switchNeighborhood()">
+          <div class="settings-item-icon" style="background:#EBF3FF;color:var(--info)"><span class="material-symbols-outlined">swap_horiz</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Đổi / Tham gia khu phố khác</div>
+            <div class="settings-item-sub">Quay lại màn hình chọn khu phố</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-title">Tài khoản</div>
+        <div class="settings-item" style="cursor:default">
+          <div id="settings-user-photo" style="width:38px;height:38px;border-radius:50%;background:var(--primary-light);border:2px solid var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+            <span class="material-symbols-outlined" style="color:var(--primary);font-size:20px">account_circle</span>
+          </div>
+          <div class="settings-item-info">
+            <div class="settings-item-title" id="settings-user-name">--</div>
+            <div class="settings-item-sub" id="settings-user-email">--</div>
+          </div>
+          <span id="firebase-sync-badge" class="pwa-status-badge installed" style="font-size:10px">🔥 Firebase</span>
+        </div>
+        <div class="settings-item" onclick="signOutUser()" style="border-color:#FDC5C5">
+          <div class="settings-item-icon" style="background:#FEF0F0;color:var(--danger)"><span class="material-symbols-outlined">logout</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title" style="color:var(--danger)">Đăng xuất</div>
+            <div class="settings-item-sub">Thoát khỏi tài khoản Google</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-title">Minh bạch</div>
+        <div class="settings-item" onclick="openActivityModal()">
+          <div class="settings-item-icon" style="background:#F3E8FF; color:#7C3AED"><span class="material-symbols-outlined">history</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Nhật ký hoạt động</div>
+            <div class="settings-item-sub" id="activity-sub">Ai thêm / sửa / xóa · phục hồi giao dịch</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-title">Đồng bộ Firebase</div>
+        <div class="settings-item" onclick="forceSyncFromFirebase()" >
+          <div class="settings-item-icon" style="background:#E8F0FE;color:#1A73E8"><span class="material-symbols-outlined">cloud_sync</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Đồng bộ thủ công</div>
+            <div class="settings-item-sub" id="firebase-last-sync">Chưa đồng bộ</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-title">Cấu hình</div>
+        <div class="settings-item" onclick="openNeighborhoodModal()">
+          <div class="settings-item-icon" style="background:#FFF3E0; color:var(--primary)"><span class="material-symbols-outlined">apartment</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Tên khu phố</div>
+            <div class="settings-item-sub" id="nb-name-sub">--</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+        <div class="settings-item" onclick="openFundModal()">
+          <div class="settings-item-icon" style="background:#F3E8FF; color:#7C3AED"><span class="material-symbols-outlined">folder</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Quản lý quỹ</div>
+            <div class="settings-item-sub" id="fund-count-sub">0 quỹ đang hoạt động</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+        <div class="settings-item" onclick="openCategoryModal()">
+          <div class="settings-item-icon" style="background:#FEF0F0; color:var(--danger)"><span class="material-symbols-outlined">category</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Danh mục giao dịch</div>
+            <div class="settings-item-sub" id="cat-count-sub">0 danh mục</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+        <div class="settings-item" onclick="openBudgetModal()">
+          <div class="settings-item-icon" style="background:#E8F7F0; color:var(--success)"><span class="material-symbols-outlined">savings</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Ngân sách tháng</div>
+            <div class="settings-item-sub" id="budget-sub">Chưa đặt ngân sách</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+        <div class="settings-item" onclick="openMembersModal()">
+          <div class="settings-item-icon" style="background:#EBF3FF; color:var(--info)"><span class="material-symbols-outlined">group</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title">Phân quyền thành viên</div>
+            <div class="settings-item-sub" id="member-count-sub">Chỉ mình bạn</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-title">Nguy hiểm</div>
+        <div class="settings-item" onclick="confirmClearData()" style="border-color:#FDC5C5">
+          <div class="settings-item-icon" style="background:#FEF0F0; color:var(--danger)"><span class="material-symbols-outlined">delete_forever</span></div>
+          <div class="settings-item-info">
+            <div class="settings-item-title" style="color:var(--danger)">Xóa toàn bộ dữ liệu</div>
+            <div class="settings-item-sub">Không thể hoàn tác</div>
+          </div>
+          <span class="material-symbols-outlined settings-item-arrow">chevron_right</span>
+        </div>
+      </div>
+      <div style="text-align:center; padding: 24px 16px; font-size:11px; color:var(--text-muted)">
+        Quản Lý Tài Chính Khu Phố v6.0<br>🔥 Firebase · PWA · Offline Ready
+      </div>
+    </div>
+  </main>
+
+  <!-- BOTTOM NAV -->
+  <nav>
+    <button class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
+      <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1">dashboard</span>
+      <span>Bảng tin</span>
+    </button>
+    <button class="nav-item" id="nav-history" onclick="showPage('history')">
+      <span class="material-symbols-outlined">history</span>
+      <span>Lịch sử</span>
+    </button>
+    <div class="nav-add">
+      <button class="nav-add-btn" onclick="openTxModal()">
+        <span class="material-symbols-outlined">add</span>
+      </button>
+    </div>
+    <button class="nav-item" id="nav-report" onclick="showPage('report')">
+      <span class="material-symbols-outlined">bar_chart</span>
+      <span>Báo cáo</span>
+    </button>
+    <button class="nav-item" id="nav-settings" onclick="showPage('settings')">
+      <span class="material-symbols-outlined">settings</span>
+      <span>Cài đặt</span>
+    </button>
+  </nav>
+</div>
+
+<!-- EXPORT CSV MODAL -->
+<div class="modal-overlay" id="export-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Xuất file CSV</div>
+    <div class="form-group">
+      <label class="form-label">Phạm vi xuất</label>
+      <select class="form-select" id="csv-range" onchange="updateCSVPreview()">
+        <option value="all">Tất cả giao dịch</option>
+        <option value="month">Tháng hiện tại</option>
+        <option value="income">Chỉ thu nhập</option>
+        <option value="expense">Chỉ chi phí</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Bao gồm cột</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="csv-col-date" checked style="accent-color:var(--primary)" onchange="updateCSVPreview()"> Ngày
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="csv-col-name" checked style="accent-color:var(--primary)" onchange="updateCSVPreview()"> Tên
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="csv-col-type" checked style="accent-color:var(--primary)" onchange="updateCSVPreview()"> Loại
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="csv-col-amount" checked style="accent-color:var(--primary)" onchange="updateCSVPreview()"> Số tiền
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="csv-col-fund" checked style="accent-color:var(--primary)" onchange="updateCSVPreview()"> Quỹ
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="csv-col-note" checked style="accent-color:var(--primary)" onchange="updateCSVPreview()"> Ghi chú
+        </label>
+      </div>
+    </div>
+    <div id="csv-preview-box" style="background:var(--bg);border-radius:10px;padding:12px;font-size:11px;font-family:monospace;color:var(--text-muted);margin-bottom:16px;max-height:100px;overflow:hidden;line-height:1.6"></div>
+    <button class="btn btn-primary" onclick="doExportCSV()">
+      <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;margin-right:4px">download</span>Tải xuống CSV
+    </button>
+    <button class="btn btn-secondary" onclick="closeModal('export-modal')">Hủy</button>
+  </div>
+</div>
+
+<!-- RECEIPT PDF MODAL -->
+<div class="modal-overlay" id="receipt-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Xuất phiếu thu/chi PDF</div>
+    <div class="form-group">
+      <label class="form-label">Chọn giao dịch</label>
+      <select class="form-select" id="receipt-tx-select">
+        <option value="">-- Chọn giao dịch --</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Người lập phiếu</label>
+      <input class="form-input" id="receipt-author" type="text" placeholder="VD: Nguyễn Văn A">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Ghi chú thêm trên phiếu</label>
+      <input class="form-input" id="receipt-extra-note" type="text" placeholder="VD: Đã nhận đủ tiền">
+    </div>
+    <div style="background:var(--bg);border-radius:10px;padding:12px;margin-bottom:16px">
+      <p style="font-size:11px;color:var(--text-muted);text-align:center">Xem trước phiếu</p>
+      <div id="receipt-preview" style="margin-top:8px;pointer-events:none;transform-origin:top center;transform:scale(0.65);height:200px;overflow:hidden"></div>
+    </div>
+    <button class="btn btn-primary" onclick="printReceiptPDF()">
+      <span class="material-symbols-outlined" style="font-size:18px;vertical-align:middle;margin-right:4px">print</span>In / Lưu PDF
+    </button>
+    <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal('receipt-modal')">Hủy</button>
+  </div>
+</div>
+
+<!-- RECEIPT LOOKUP MODAL: tra cứu mã phiếu thu/chi để tăng tính minh bạch -->
+<div class="modal-overlay" id="lookup-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Tra cứu mã phiếu thu/chi</div>
+    <p style="font-size:12px;color:var(--text-muted);margin:-8px 0 16px">Nhập mã in trên phiếu (VD: 2026-0007) để xem lại giao dịch tương ứng, đảm bảo minh bạch thu chi.</p>
+    <div class="form-group">
+      <label class="form-label">Mã phiếu</label>
+      <div style="display:flex;gap:8px">
+        <input class="form-input" id="lookup-code-input" type="text" placeholder="VD: 2026-0007" style="flex:1;text-transform:uppercase;font-family:'Courier New',monospace;font-weight:700;letter-spacing:.5px" autocomplete="off">
+        <button class="btn btn-primary" style="width:auto;padding:0 18px;margin:0" onclick="doLookupReceipt()">
+          <span class="material-symbols-outlined" style="font-size:18px">search</span>
+        </button>
+      </div>
+    </div>
+    <div id="lookup-result"></div>
+    <button class="btn btn-secondary" style="margin-top:14px" onclick="closeModal('lookup-modal')">Đóng</button>
+  </div>
+</div>
+
+<!-- CATEGORY MODAL -->
+<div class="modal-overlay" id="category-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Danh mục giao dịch</div>
+    <div id="category-list" style="margin-bottom:16px;max-height:220px;overflow-y:auto"></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <input class="form-input" id="new-cat-name" type="text" placeholder="Tên danh mục mới..." style="flex:1;margin:0">
+      <select class="form-select" id="new-cat-icon" style="width:110px;margin:0">
+        <option value="🏗️">🏗️ Hạ tầng</option>
+        <option value="🎓">🎓 Giáo dục</option>
+        <option value="🔒">🔒 An ninh</option>
+        <option value="🎉">🎉 Lễ hội</option>
+        <option value="💧">💧 Điện nước</option>
+        <option value="🌿">🌿 Môi trường</option>
+        <option value="🏥">🏥 Y tế</option>
+        <option value="🤝">🤝 Hỗ trợ</option>
+        <option value="📋">📋 Hành chính</option>
+        <option value="💰">💰 Khác</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="addCategory()">+ Thêm danh mục</button>
+    <button class="btn btn-secondary" onclick="closeModal('category-modal')">Đóng</button>
+  </div>
+</div>
+
+<!-- BUDGET MODAL -->
+<div class="modal-overlay" id="budget-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Ngân sách tháng</div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Đặt hạn mức chi tiêu theo danh mục. App sẽ cảnh báo khi gần đạt ngưỡng.</p>
+    <div id="budget-list" style="margin-bottom:16px;max-height:300px;overflow-y:auto"></div>
+    <button class="btn btn-secondary" onclick="closeModal('budget-modal')">Đóng</button>
+  </div>
+</div>
+
+<!-- MEMBERS MODAL -->
+<div class="modal-overlay" id="members-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Phân quyền thành viên</div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Quản lý và tra cứu vai trò các thành viên trong khu phố.</p>
+    <div id="members-list" style="margin-bottom:16px"></div>
+    <div id="invite-member-section" style="background:var(--bg);border-radius:12px;padding:14px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:10px">Mời thành viên mới (Chỉ Thủ quỹ)</div>
+      <input class="form-input" id="invite-email" type="email" placeholder="Email Google của thành viên" style="margin-bottom:8px">
+      <select class="form-select" id="invite-role" style="margin-bottom:10px">
+        <option value="member">👤 Thành viên – Xem & được thêm giao dịch</option>
+        <option value="viewer">👁️ Người xem – Chỉ xem dữ liệu</option>
+        <option value="admin">🔑 Thủ quỹ – Toàn quyền quản trị</option>
+      </select>
+      <button class="btn btn-primary" style="margin:0" onclick="inviteMember()">
+        <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">person_add</span>Gửi lời mời
+      </button>
+    </div>
+    <div style="background:#FFF8E7;border:1px solid #FFE0B2;border-radius:10px;padding:12px;font-size:11px;color:#5D4037;line-height:1.6">
+      <div style="font-weight:700;margin-bottom:5px;color:#E65100">📌 Chi tiết phân quyền vai trò:</div>
+      <div style="margin-bottom:4px">🔑 <strong>Thủ quỹ (Admin):</strong> Toàn quyền quản trị, thêm/sửa/xóa giao dịch, quản lý các quỹ, duyệt đề xuất và phân quyền thành viên.</div>
+      <div style="margin-bottom:4px">👤 <strong>Thành viên (Member):</strong> Xem toàn bộ số liệu khu phố và <strong>được thêm giao dịch</strong> (gửi đề xuất thu/chi kèm ảnh hóa đơn để Thủ quỹ duyệt).</div>
+      <div>👁️ <strong>Người xem (Viewer):</strong> Chỉ xem số liệu và báo cáo công khai, không có quyền thêm hay sửa đổi dữ liệu.</div>
+    </div>
+    <button class="btn btn-secondary" onclick="closeModal('members-modal')" style="margin-top:12px">Đóng</button>
+  </div>
+</div>
+
+<!-- PWA GUIDE MODAL -->
+<div class="modal-overlay" id="pwa-guide-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Hướng dẫn cài đặt PWA</div>
+    <div style="space-y:12px">
+
+      <div style="background:#FFF3E0;border-radius:12px;padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+          <span style="font-size:18px">🍎</span> iPhone / iPad (Safari)
+        </div>
+        <ol style="font-size:12px;color:var(--text-muted);padding-left:16px;line-height:2">
+          <li>Mở Safari và truy cập trang này</li>
+          <li>Bấm nút <strong>Chia sẻ</strong> <span style="background:#eee;padding:2px 6px;border-radius:4px">⬆</span></li>
+          <li>Chọn <strong>"Thêm vào Màn hình chính"</strong></li>
+          <li>Bấm <strong>Thêm</strong> để hoàn tất</li>
+        </ol>
+      </div>
+
+      <div style="background:#E8F7F0;border-radius:12px;padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+          <span style="font-size:18px">🤖</span> Android (Chrome)
+        </div>
+        <ol style="font-size:12px;color:var(--text-muted);padding-left:16px;line-height:2">
+          <li>Mở Chrome và truy cập trang này</li>
+          <li>Bấm menu <strong>⋮</strong> góc phải trên</li>
+          <li>Chọn <strong>"Thêm vào màn hình chính"</strong></li>
+          <li>Xác nhận <strong>Thêm</strong></li>
+        </ol>
+      </div>
+
+      <div style="background:#EBF3FF;border-radius:12px;padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+          <span style="font-size:18px">💻</span> Máy tính (Chrome / Edge)
+        </div>
+        <ol style="font-size:12px;color:var(--text-muted);padding-left:16px;line-height:2">
+          <li>Bấm biểu tượng <strong>⊕</strong> trên thanh địa chỉ</li>
+          <li>Hoặc vào menu → <strong>"Cài đặt trang này"</strong></li>
+          <li>Bấm <strong>Cài đặt</strong> để thêm vào desktop</li>
+        </ol>
+      </div>
+
+      <div style="background:var(--bg);border-radius:12px;padding:12px;font-size:11px;color:var(--text-muted);line-height:1.7">
+        ✅ Sau khi cài đặt: ứng dụng chạy toàn màn hình, không có thanh địa chỉ, hoạt động offline và lưu dữ liệu cục bộ trên thiết bị.
+      </div>
+    </div>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="closeModal('pwa-guide-modal')">Đã hiểu</button>
+  </div>
+</div>
+
+<!-- ADD TRANSACTION MODAL -->
+<div class="modal-overlay" id="tx-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="tx-modal-title">Thêm giao dịch</div>
+    <div class="form-group">
+      <label class="form-label">Loại giao dịch</label>
+      <div class="type-toggle">
+        <button class="type-btn income active" id="btn-income" onclick="setType('income')">
+          <span class="material-symbols-outlined" style="font-size:18px">add_circle</span> Thu nhập
+        </button>
+        <button class="type-btn expense" id="btn-expense" onclick="setType('expense')">
+          <span class="material-symbols-outlined" style="font-size:18px">remove_circle</span> Chi phí
+        </button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tên giao dịch</label>
+      <input class="form-input" id="tx-name" type="text" placeholder="VD: Đóng góp Quý 3, Sửa đèn đường...">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Số tiền (VND)</label>
+      <input class="form-input" id="tx-amount" type="number" min="0" placeholder="0" oninput="updateAmountHelper()">
+      <div class="amount-helper" id="amount-helper"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Ngày</label>
+      <input class="form-input" id="tx-date" type="date">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Quỹ</label>
+      <select class="form-select" id="tx-fund">
+        <option value="">-- Quỹ chung --</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Danh mục</label>
+      <select class="form-select" id="tx-category">
+        <option value="">-- Không phân loại --</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Ghi chú</label>
+      <input class="form-input" id="tx-note" type="text" placeholder="Ghi chú thêm (không bắt buộc)">
+    </div>
+    <div class="form-group">
+      <label class="form-label">📸 Ảnh hóa đơn / chứng từ</label>
+      <div id="receipt-photo-area" onclick="document.getElementById('receipt-photo-input').click()" style="
+        border:2px dashed var(--border);border-radius:12px;padding:16px;text-align:center;
+        cursor:pointer;background:var(--bg);transition:border-color .2s;min-height:80px;
+        display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;
+      " onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+        <span class="material-symbols-outlined" style="font-size:28px;color:var(--text-muted)" id="receipt-photo-icon">add_photo_alternate</span>
+        <span style="font-size:12px;color:var(--text-muted)" id="receipt-photo-label">Nhấn để chọn ảnh</span>
+        <img id="receipt-photo-preview" src="" style="display:none;max-width:100%;max-height:140px;border-radius:8px;object-fit:contain">
+      </div>
+      <input type="file" id="receipt-photo-input" accept="image/*" style="display:none" onchange="onReceiptPhotoSelected(event)">
+      <button id="receipt-photo-remove" onclick="removeReceiptPhoto()" style="display:none;background:none;border:none;color:var(--danger);font-size:12px;cursor:pointer;margin-top:4px;font-family:inherit">✕ Xóa ảnh</button>
+    </div>
+    <div id="tx-propose-section" style="display:none">
+      <div style="background:#FFF3E0;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#7A4800;line-height:1.6">
+        🗳️ Bạn là <strong>Thành viên</strong> — giao dịch sẽ được gửi lên thủ quỹ để <strong>duyệt</strong> trước khi hiển thị.
+      </div>
+    </div>
+    <button class="btn btn-primary" id="tx-save-btn" onclick="saveTx()">Lưu giao dịch</button>
+    <button class="btn btn-secondary" onclick="closeModal('tx-modal')">Hủy</button>
+  </div>
+</div>
+
+<!-- APPROVAL MODAL (admin duyệt chi) -->
+<div class="modal-overlay" id="approval-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🗳️ Duyệt đề xuất</div>
+    <div id="approval-list" style="max-height:400px;overflow-y:auto"></div>
+    <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal('approval-modal')">Đóng</button>
+  </div>
+</div>
+
+<!-- ACTIVITY LOG MODAL (nhật ký + phục hồi) -->
+<div class="modal-overlay" id="activity-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📜 Nhật ký hoạt động</div>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">
+      Ghi lại ai <strong>thêm / sửa / xóa</strong> giao dịch. Giao dịch đã xóa có thể được <strong>phục hồi</strong> (chỉ Thủ quỹ).
+    </p>
+    <div class="filter-bar" id="activity-filter-bar" style="padding:0;margin:0 0 10px">
+      <button class="filter-chip active" data-af="all" onclick="filterActivity('all')">Tất cả</button>
+      <button class="filter-chip" data-af="delete" onclick="filterActivity('delete')">🗑️ Đã xóa</button>
+      <button class="filter-chip" data-af="edit" onclick="filterActivity('edit')">✏️ Đã sửa</button>
+      <button class="filter-chip" data-af="create" onclick="filterActivity('create')">➕ Đã thêm</button>
+    </div>
+    <div id="activity-list" style="max-height:420px;overflow-y:auto"></div>
+    <button class="btn btn-secondary" style="margin-top:8px" onclick="closeModal('activity-modal')">Đóng</button>
+  </div>
+</div>
+
+<!-- QR CODE MODAL -->
+<div class="modal-overlay" id="qr-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📱 QR Tham gia khu phố</div>
+    <div style="text-align:center;padding:16px 0">
+      <div id="qr-canvas-wrap" style="display:inline-block;padding:16px;background:white;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.1)">
+        <canvas id="qr-canvas" width="200" height="200"></canvas>
+      </div>
+      <div style="margin-top:14px;font-size:22px;font-weight:900;letter-spacing:4px;color:var(--primary)" id="qr-code-display"></div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:6px" id="qr-nb-name-display"></div>
+    </div>
+    <div style="background:var(--bg);border-radius:10px;padding:12px 14px;font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.6">
+      Người dân quét QR này bằng camera điện thoại hoặc nhập mã thủ công để tham gia khu phố.
+    </div>
+    <button class="btn btn-primary" onclick="downloadQR()">
+      <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">download</span>Tải ảnh QR
+    </button>
+    <button class="btn btn-secondary" onclick="closeModal('qr-modal')">Đóng</button>
+  </div>
+</div>
+
+<!-- TX DETAIL MODAL -->
+<div class="modal-overlay" id="tx-detail-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <div class="modal-title" style="margin-bottom:0">Chi tiết giao dịch</div>
+      <div id="detail-type-badge"></div>
+    </div>
+    <div class="detail-amount-big" id="detail-amount"></div>
+    <div id="detail-rows"></div>
+    <div class="detail-actions">
+      <button class="btn btn-secondary" id="detail-edit-btn" onclick="editFromDetail()">
+        <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">edit</span>Sửa
+      </button>
+      <button class="btn btn-danger" id="detail-delete-btn" onclick="deleteFromDetail()">
+        <span class="material-symbols-outlined" style="font-size:16px;vertical-align:middle;margin-right:4px">delete</span>Xóa
+      </button>
+    </div>
+    <button class="btn btn-secondary" style="margin-top:10px" onclick="closeModal('tx-detail-modal')">Đóng</button>
+  </div>
+</div>
+
+<!-- ADD FUND MODAL -->
+<div class="modal-overlay" id="fund-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Quản lý quỹ</div>
+    <div id="fund-management-list" style="margin-bottom:16px; max-height:200px; overflow-y:auto;"></div>
+    <div style="border-top:1px solid var(--border); padding-top:16px; margin-bottom:16px;">
+      <div class="modal-title" style="font-size:15px; margin-bottom:14px;">Thêm quỹ mới</div>
+      <div class="form-group">
+        <label class="form-label">Tên quỹ</label>
+        <input class="form-input" id="fund-name" type="text" placeholder="VD: Quỹ Giáo dục, Quỹ An ninh...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Số dư ban đầu (VND)</label>
+        <input class="form-input" id="fund-initial" type="number" min="0" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Ghi chú</label>
+        <input class="form-input" id="fund-note" type="text" placeholder="Mô tả mục đích quỹ (không bắt buộc)">
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="addFund()">Thêm quỹ</button>
+    <button class="btn btn-secondary" onclick="closeModal('fund-modal')">Đóng</button>
+  </div>
+</div>
+
+<!-- FUND DETAIL MODAL: xem chi tiết thu chi của 1 quỹ (hoặc Quỹ chung) -->
+<div class="modal-overlay" id="fund-detail-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <div class="modal-title" style="margin-bottom:0" id="fund-detail-title">Chi tiết quỹ</div>
+      <button class="fund-vis-btn" id="fund-detail-vis-btn" style="display:none" onclick="toggleFundDetailVisibility()" title="Bật/tắt hiển thị quỹ">
+        <span class="material-symbols-outlined" id="fund-detail-vis-icon" style="font-size:18px">visibility</span>
+      </button>
+    </div>
+    <div id="fund-detail-note" style="font-size:12px;color:var(--text-muted);margin-bottom:10px"></div>
+    <div class="stat-row" style="margin:0 0 16px;grid-template-columns:1fr 1fr 1fr">
+      <div class="stat-card" style="padding:10px">
+        <div class="stat-label">Số dư</div>
+        <div class="stat-value" id="fund-detail-balance" style="font-size:14px"></div>
+      </div>
+      <div class="stat-card" style="padding:10px">
+        <div class="stat-label">Tổng thu</div>
+        <div class="stat-value income" id="fund-detail-income" style="font-size:14px"></div>
+      </div>
+      <div class="stat-card" style="padding:10px">
+        <div class="stat-label">Tổng chi</div>
+        <div class="stat-value expense" id="fund-detail-expense" style="font-size:14px"></div>
+      </div>
+    </div>
+    <div class="section-title" style="font-size:14px;margin-bottom:10px">Lịch sử thu chi</div>
+    <div id="fund-detail-tx-list" style="max-height:340px;overflow-y:auto"></div>
+    <button class="btn btn-secondary" style="margin-top:14px" onclick="closeModal('fund-detail-modal')">Đóng</button>
+  </div>
+</div>
+
+<!-- NEIGHBORHOOD NAME MODAL -->
+<div class="modal-overlay" id="nb-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Tên khu phố</div>
+    <div class="form-group">
+      <label class="form-label">Nhập tên khu phố / tổ dân phố</label>
+      <input class="form-input" id="nb-name-input" type="text" placeholder="VD: Khu phố 3, P. Tân Hiệp">
+    </div>
+    <button class="btn btn-primary" onclick="saveNeighborhoodName()">Lưu</button>
+    <button class="btn btn-secondary" onclick="closeModal('nb-modal')">Hủy</button>
+  </div>
+</div>
+
+<!-- RECEIPT PRINT AREA (hidden, shown on print) -->
+<div id="receipt-print-area"></div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ===== JS MODULES (tách từ index.html gốc) ===== -->
+<script src="./js/utils.js"></script>
+<script src="./js/templates.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
