@@ -1,4 +1,4 @@
-// Service Worker — Quản Lý Tài Chính Khu Phố
+// Service Worker — Quản Lý Tài Chính Ấp
 // Tách riêng để PWA offline ổn định khi được host qua HTTPS.
 const CACHE = 'khu-pho-finance-v6';
 

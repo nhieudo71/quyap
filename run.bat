@@ -6,7 +6,7 @@ set "PORT=5899"
 set "URL=http://localhost:%PORT%/index.html"
 
 echo ==================================================
-echo   Quan Ly Tai Chinh Khu Pho - Local Server
+echo   Quan Ly Tai Chinh Ap - Local Server
 echo   %URL%
 echo   (Dong cua so nay de TAT server)
 echo ==================================================

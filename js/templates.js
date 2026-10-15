@@ -135,7 +135,7 @@ td{padding:7px 6px;border-bottom:1px solid #f0f0f0;font-size:10px}
 </div>
 <table><thead><tr><th>Ngày</th><th>Nội dung</th><th>Loại</th><th style="text-align:right">Số tiền</th><th>Quỹ</th><th>Ghi chú</th></tr></thead>
 <tbody>${rows || '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:20px">Không có giao dịch</td></tr>'}</tbody></table>
-<div class="ftr">${esc(data.neighborhoodName)} &middot; Quản lý tài chính khu phố &middot; Tháng ${m + 1}/${y}</div>
+<div class="ftr">${esc(data.neighborhoodName)} &middot; Quản lý tài chính ấp &middot; Tháng ${m + 1}/${y}</div>
 <script>var _printed=false;function go(){if(_printed)return;_printed=true;window.focus();window.print()}if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){setTimeout(go,120)});setTimeout(go,2500)}else{setTimeout(go,600)}<\/script>
 </body></html>`;
 }

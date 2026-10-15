@@ -1,7 +1,7 @@
 {
-  "name": "Quản Lý Tài Chính Khu Phố",
-  "short_name": "Tài Chính KP",
-  "description": "Ứng dụng quản lý tài chính khu phố – thu chi, báo cáo, đồng bộ đám mây Firebase",
+  "name": "Quản Lý Tài Chính Ấp",
+  "short_name": "Tài Chính Ấp",
+  "description": "Ứng dụng quản lý tài chính ấp – thu chi, báo cáo, đồng bộ đám mây Firebase",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
